@@ -72,17 +72,19 @@ git clone https://github.com/supElement/ComfyUI_Alpha_Anything.git
 
 > 需要较新的 ComfyUI（使用 V3 节点 API 与 `io.Custom` 端口）。
 
-### 模型目录
+## 模型目录
 
 适配器统一放在：
 
-> ComfyUI/models/alphaanything/
->   flux2_klein_base_9b_t2rgba/
->     adapter_config.json
->     pytorch_lora_weights.safetensors
->     alpha_decoder.safetensors
->   qwen_image_2512_t2rgba/
->     ...
+```text
+ComfyUI/models/alphaanything/
+├── flux2_klein_base_9b_t2rgba/
+│   ├── adapter_config.json
+│   ├── pytorch_lora_weights.safetensors
+│   └── alpha_decoder.safetensors
+└── qwen_image_2512_t2rgba/
+    ├── ...
+```
 
 - 目录不存在会自动创建。
 - 三个文件缺任意一个，首次执行该适配器时会自动下载；下载先走 `huggingface.co`，失败再走 `hf-mirror.com`。
