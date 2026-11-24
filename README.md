@@ -11,6 +11,10 @@ AlphaAnything 的纯原生 ComfyUI 实现：不依赖 diffusers，只新增一�
 
 </div>
 
+<img width="2264" height="793" alt="image" src="https://github.com/user-attachments/assets/b64f8205-6ba5-4b9a-95d9-f6104f8bdae1" />
+
+<img width="2271" height="1158" alt="屏幕截图 2026-11-24 154434" src="https://github.com/user-attachments/assets/794d3af2-c5e7-4473-9eeb-1d3df3039074" />
+
 ---
 
 ## 它解决什么问题
