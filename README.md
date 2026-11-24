@@ -57,6 +57,10 @@ AlphaAnything 在 RGB 扩散模型（FLUX.2 Klein / Qwen-Image）上训练了两
 
 ## 📦 安装
 
+### Manager 安装
+
+在 ComfyUI Manager 中搜索 **ComfyUI_Alpha_Anything**，然后 Install。
+
 ### 手动安装
 
 ```bash
