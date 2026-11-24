@@ -62,10 +62,12 @@ jobs:
               "8. 散文部分的中文全角标点（，。：；（）等）转为英文半角（, . : ; ( ) 等）。"
           )
 
+          # [FIX] 强化 LINE_SYSTEM：明确即使某行已含英文，也必须翻掉所有中文，输出不得残留中文
           LINE_SYSTEM = (
-              "你是翻译助手。将用户给出的每一行中文翻译为英文，输出行数必须与输入完全一致，一行对应一行。"
-              "保留行内的 Markdown 结构，%%L1%%、%%I1%%、%%C1%%、%%U1%% 形式的占位符必须原样不动，数字与单位的组合（如 3s）保持原样。"
-              "只输出译文，不要任何解释。"
+              "你是翻译助手。将用户给出的每一行翻译为英文，输出行数必须与输入完全一致，一行对应一行。"
+              "即使某行已经包含部分英文，也必须把其中所有中文字符翻译为英文，最终输出不得残留任何中文字符。"
+              "保留行内的 Markdown 结构，%%L1%%、%%I1%%、%%C1%%、%%U1%% 形式的占位符必须原样不动，"
+              "数字与单位的组合（如 3s）保持原样。只输出译文，不要任何解释。"
           )
 
           LINK_RE = re.compile(r'\]\(((?:[^()\n]|\([^()\n]*\))*)\)')
@@ -350,7 +352,9 @@ jobs:
           def cjk_surgery(text, chunk):
               """中文残留的定向修复:
               - 行内中文在源文档中不存在 => 模型自行添加的行 => 删除
-              - 行内中文能在源文档中找到 => 漏译的原文行 => 二次翻译"""
+              - 行内中文能在源文档中找到 => 漏译的原文行 => 二次翻译
+              [FIX] 二次翻译后仍含中文时，回退到主翻译器 call_translate 整行重译；
+              仅当回退结果也是单行且不含中文时才采纳。"""
               lines = text.split('\n')
               in_fence, open_len = False, 0
               bad = []
@@ -387,16 +391,39 @@ jobs:
               if to_fix:
                   payload = '\n'.join(lines[i] for i in to_fix)
                   try:
+                      # [FIX] 强约束二次翻译：即使已含英文也必须翻掉所有中文
                       fixed_lines = api_call(
                           LINE_SYSTEM,
-                          "请将以下各行逐行翻译为英文（输出行数必须与输入一致）:\n\n" + payload,
+                          "请将以下各行逐行翻译为英文（输出行数必须与输入完全一致）。"
+                          "无论某行是否已含英文，其中所有中文字符都必须翻译为英文，"
+                          "最终输出不得残留任何中文字符。保留 Markdown 结构、"
+                          "%%L1%%/%%I1%%/%%C1%%/%%U1%% 占位符及数字单位：\n\n"
+                          + payload,
                           0.1).strip().split('\n')
                       if len(fixed_lines) == len(to_fix):
                           for i, nl in zip(to_fix, fixed_lines):
                               # [FIX] 保留原行缩进（嵌套列表/引用块），只替换正文，
                               # 否则 strip() 会破坏 Markdown 层级结构
                               ws = re.match(r'[ \t]*', lines[i]).group(0)
-                              lines[i] = ws + nl.strip()
+                              candidate = ws + nl.strip()
+
+                              # [FIX] 二次翻译仍含中文：回退到主翻译器整行重译
+                              if CJK_RE.search(translatable_prose(candidate)):
+                                  try:
+                                      alt = strip_fence(
+                                          call_translate(candidate, 0.1)
+                                      ).strip()
+                                      # 仅接受单行、非空、且不含中文的替代译文
+                                      if (alt and '\n' not in alt
+                                              and not CJK_RE.search(translatable_prose(alt))):
+                                          candidate = ws + alt
+                                          print(f"  [CJK修复] 行 {i} 二次翻译仍含中文，已回退主翻译器重译")
+                                      else:
+                                          print(f"  [CJK修复] 行 {i} 回退重译仍不合格，保留当前结果")
+                                  except Exception as e:
+                                      print(f"  [CJK修复] 行 {i} 回退重译失败: {e}")
+
+                              lines[i] = candidate
                           print(f"  [CJK修复] 已对 {len(to_fix)} 行漏译内容完成二次翻译")
                       else:
                           print(f"  [CJK修复] 二次翻译行数不匹配(出 {len(fixed_lines)}/入 {len(to_fix)})，保留原文")
@@ -455,9 +482,13 @@ jobs:
                   # [FIX] 容错清洗：模型可能在括号内加空格 ( %%L1%% ) -> (%%L1%%)
                   fixed = re.sub(r'\(\s*(%%[A-Z]\d+%%)\s*\)', r'(\1)', fixed)
                   err = validate_masked(fixed, len(targets), len(imgs), len(codes), len(units))
+                  # [FIX] 中文残留允许两轮 cjk_surgery，避免同一行二次翻译偷懒导致重试空转
                   if err and '中文残留' in err:
-                      fixed = cjk_surgery(fixed, masked)
-                      err = validate_masked(fixed, len(targets), len(imgs), len(codes), len(units))
+                      for _ in range(2):
+                          fixed = cjk_surgery(fixed, masked)
+                          err = validate_masked(fixed, len(targets), len(imgs), len(codes), len(units))
+                          if not err:
+                              break
                   if err:
                       print(f"[段{i}/第{attempt}次] 校验失败: {err}")
                       print(f"  译段开头: {fixed[:80].strip()!r}")
