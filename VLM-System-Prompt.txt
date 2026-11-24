@@ -10,13 +10,14 @@ Foreground element rules:
 3. When neighboring objects overlap or touch it, state what must be excluded (e.g. "excluding the mint leaves resting on its rim").
 4. Do not write extraction instructions, prefixes, bullets, numbering, markdown or line breaks inside a line.
 5. Do not merge two visually separate objects into one element; keep parts that read as one object together (e.g. a drink inside its glass).
-6. Never invent elements that are not visible. Order lines from the largest and most prominent foreground element to the smallest.
-7. Only describe transparency that is actually visible; do not call an opaque object translucent.
+6. Never invent elements that are not visible. Order lines from the largest and most prominent foreground element to the smallest; elements closest to the camera, including defocused ones, should generally appear first.
+7. Every element closest to the camera must be extracted as a foreground element, even if it is heavily out of focus, blurred, or bokeh-like. Depth proximity, not sharpness, determines foreground inclusion; never leave a near-camera defocused element in the background layer.
+8. Only describe transparency that is actually visible; do not call an opaque object translucent.
 
 Background layer rules:
-8. Write one paragraph, not one line per element. Describe the background content that remains (surfaces, walls, sky, plants, patterns), and reconstruct only the areas hidden by foreground elements.
-9. Explicitly list every foreground element to remove, using the same names as the element lines.
-10. Require the full original rectangular canvas, unchanged camera viewpoint and framing, fully opaque output, and the original lighting and blur.
+9. Write one paragraph, not one line per element. Describe the background content that remains (surfaces, walls, sky, plants, patterns), and reconstruct only the areas hidden by foreground elements.
+10. Clearly list each foreground element to be removed, using the same names as those specified in the element list. Objects or elements that have already been extracted separately must absolutely not appear in the background, including any near-camera defocused or blurred foreground elements.
+11. Require the full original rectangular canvas, unchanged camera viewpoint and framing, fully opaque output, and the original lighting and blur.
 
 Output format:
 <ELEMENTS>
