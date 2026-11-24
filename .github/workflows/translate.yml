@@ -5,9 +5,8 @@ on:
     branches: ['main']
     paths:
       - 'README.md'
-  workflow_dispatch:        # [FIX] 支持手动触发，便于首次跑通和失败补跑
+  workflow_dispatch:        
 
-# [FIX] 防止连续 push 触发多个并行 run 互相冲突 / 旧译文覆盖新译文
 concurrency:
   group: translate-readme
   cancel-in-progress: true
@@ -15,16 +14,15 @@ concurrency:
 jobs:
   translate:
     runs-on: ubuntu-latest
-    timeout-minutes: 30     # [FIX] 整体超时兜底
+    timeout-minutes: 30     
     permissions:
       contents: write
     env:
-      ZHIPU_MODEL: glm-4-flash-250414   # [FIX] 模型名可配置，便于切换
+      ZHIPU_MODEL: glm-4-flash-250414  
     steps:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          # [FIX] 移除 fetch-depth: 0，只读工作区+提交单文件无需完整历史
 
       - name: Translate with Zhipu (Free Forever)
         env:
@@ -37,7 +35,6 @@ jobs:
           FENCE = '`' * 3
           CJK_RE = re.compile(r'[\u4e00-\u9fff]+')
 
-          # [FIX] 启动即预检 API Key，缺失时立即失败并给出清晰报错，不再白白重试 3 次
           MODEL = os.environ.get('ZHIPU_MODEL', 'glm-4-flash-250414')
           if not os.environ.get('ZHIPU_KEY'):
               print('缺少 ZHIPU_API_KEY secret，已中止')
@@ -62,7 +59,6 @@ jobs:
               "8. 散文部分的中文全角标点（，。：；（）等）转为英文半角（, . : ; ( ) 等）。"
           )
 
-          # [FIX] 强化 LINE_SYSTEM：明确即使某行已含英文，也必须翻掉所有中文，输出不得残留中文
           LINE_SYSTEM = (
               "你是翻译助手。将用户给出的每一行翻译为英文，输出行数必须与输入完全一致，一行对应一行。"
               "即使某行已经包含部分英文，也必须把其中所有中文字符翻译为英文，最终输出不得残留任何中文字符。"
@@ -71,14 +67,11 @@ jobs:
           )
 
           LINK_RE = re.compile(r'\]\(((?:[^()\n]|\([^()\n]*\))*)\)')
-          # [FIX] 同时保护 <img> 标签和 <https://...> 自动链接，防止 URL 被模型改写
           IMG_RE = re.compile(r'<img\b[^>]*>|<https?://[^\s>]+>', re.I)
           TAG_RE = re.compile(r'<!--.*?-->|<[^<>\n]+>', re.S)
           INLINE_RE = re.compile(r'`[^`\n]+`')
-          # [FIX] 扩充单位白名单（kHz/MHz/GHz/TB/km/cm/mm/px/pt 等）
           UNIT_RE = re.compile(r'\b\d+(?:\.\d+)?(?:ms|s|min|h|fps|Hz|kHz|MHz|GHz|KB|MB|GB|TB|km|cm|mm|px|pt)\b')
 
-          # [FIX] 中文残留检查专用：这些区域里的中文不算"漏译"
           URL_RE = re.compile(r'https?://\S+')
           ATTR_RE = re.compile(r'<[^>]*>', re.S)
           HTML_COMMENT_RE = re.compile(r'<!--.*?-->', re.S)
@@ -147,8 +140,6 @@ jobs:
               return len(s) - len(s.lstrip('`')) if s.startswith(FENCE) else 0
 
           def mask_line_tokens(text):
-              """围栏外按行处理：纯ASCII行内代码与 数字+单位 掩码为占位符。
-              含中文的行内代码不掩码（交给模型翻译），但其内的数字+单位仍会被保护。"""
               codes, units = [], []
               out, in_fence, open_len = [], False, 0
               for ln in text.split('\n'):
@@ -192,15 +183,10 @@ jobs:
               return re.sub(r'`[^`\n]*`', '', t)
 
           def prose_text(text):
-              """旧接口，保留兼容；建议新代码用 translatable_prose"""
               t = strip_code_and_inline(text)
               return TAG_RE.sub(' ', t)
 
           def translatable_prose(text):
-              """[FIX] 只保留"应当被翻译"的散文，去掉一切不应算作中文残留的区域：
-              代码块/行内代码、HTML 注释、HTML 标签与属性、裸 URL、
-              Markdown 链接目标、图片 alt、占位符。
-              这样 URL/alt/属性里的中文不会再被误报成漏译。"""
               t = strip_code_and_inline(text)      # 去围栏代码 + 行内代码
               t = HTML_COMMENT_RE.sub(' ', t)      # 去 <!-- ... -->
               t = ATTR_RE.sub(' ', t)              # 去 <...> 标签/属性
@@ -211,7 +197,6 @@ jobs:
               return t
 
           def extract_fence_spans(text):
-              """返回每个代码围栏块的 (首行行号, 末行行号)，含首尾围栏行"""
               spans, in_fence, open_len, start = [], False, 0, 0
               for idx, ln in enumerate(text.split('\n')):
                   n = fence_len(ln)
@@ -225,8 +210,6 @@ jobs:
               return spans
 
           def restore_code_blocks(out_text, src_text):
-              """把译文中每个代码块用源文档对应代码块原样覆盖（机械恢复）。
-              代码块数量对不上时返回 None。"""
               sl = src_text.split('\n')
               ol = out_text.split('\n')
               ss = extract_fence_spans(src_text)
@@ -250,7 +233,6 @@ jobs:
                   pids = sorted(int(x) for x in re.findall(pat, text))
                   if pids != list(range(1, total + 1)):
                       return f"{name}占位符不完整: 期望 {total} 个, 实际 {len(pids)} 个"
-              # [FIX] 改用 translatable_prose，URL/alt/属性里的中文不再误报
               cjk = CJK_RE.findall(translatable_prose(text))
               if cjk:
                   return "译文存在中文残留: " + ", ".join(cjk[:10])
@@ -270,11 +252,9 @@ jobs:
               if len(fs) != len(fo):
                   return f"整体代码块数量不一致: 源 {len(fs)} / 译 {len(fo)}"
               t = LINK_RE.sub('](URL)', out)
-              # [FIX] 同样改用 translatable_prose
               cjk = CJK_RE.findall(translatable_prose(t))
               if cjk:
                   return "整体中文残留: " + ", ".join(cjk[:10])
-              # [FIX] 长度比例检查：模型整体缩译时其他校验均能通过，这里兜底
               sp = len(translatable_prose(LINK_RE.sub('](URL)', src)))
               op = len(translatable_prose(t))
               if sp > 0 and op < sp * 0.5:
@@ -302,10 +282,6 @@ jobs:
                   if not in_fence and size >= MIN and (ln.startswith('## ') or ln.startswith('# ')):
                       flush()
                   elif not in_fence and size >= HARD:
-                      # [FIX] 强制分片兜底：原版只能在空行切割，遇到超长无空行的段落/表格
-                      # 时 chunk 会无限膨胀，输出溢出 max_tokens 导致 3 次重试全失败。
-                      # 现在超出 HARD 后在行边界强制切割（跳过表格行以降低切坏表格的概率，
-                      # 代码围栏内已有 in_fence 保护不会切割）。
                       if not ln.lstrip().startswith('|'):
                           flush()
                   cur.append(ln)
@@ -350,11 +326,6 @@ jobs:
                   temperature)
 
           def cjk_surgery(text, chunk):
-              """中文残留的定向修复:
-              - 行内中文在源文档中不存在 => 模型自行添加的行 => 删除
-              - 行内中文能在源文档中找到 => 漏译的原文行 => 二次翻译
-              [FIX] 二次翻译后仍含中文时，回退到主翻译器 call_translate 整行重译；
-              仅当回退结果也是单行且不含中文时才采纳。"""
               lines = text.split('\n')
               in_fence, open_len = False, 0
               bad = []
@@ -368,8 +339,6 @@ jobs:
                       continue
                   if in_fence:
                       continue
-                  # [FIX] 判断前先剥掉代码、标签、URL、占位符，
-                  # 避免把 URL/alt/属性里的中文也当成需要修复的残留
                   t = re.sub(r'`[^`\n]*`', '', ln)
                   t = ATTR_RE.sub(' ', t)
                   t = URL_RE.sub(' ', t)
@@ -432,11 +401,6 @@ jobs:
               return '\n'.join(lines)
 
           def strip_fence(content):
-              """[FIX] 原版无条件剥掉译文开头的围栏，当文档本身以代码块开头时会误删，
-              导致围栏数量对不上、restore_code_blocks 失败、整个任务中止。
-              现在只在整个输出被单对围栏完整包裹（首行为围栏、末行为围栏、
-              围栏 span 覆盖全文）且语言标注为空或 markdown/md 时，才认定为模型
-              自行添加的外壳并剥离。"""
               content = content.strip()
               lines = content.split('\n')
               if (len(lines) >= 2 and fence_len(lines[0]) > 0
