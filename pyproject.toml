@@ -1,7 +1,7 @@
 [project]
 name = "ComfyUI_Alpha_Anything"
 description = """A native ComfyUI implementation of AlphaAnything: it does not rely on the `diffusers` library. LoRAs are handled via ComfyUI's native loaders, while model loading, text encoding, sampling, and VAE encoding all utilize built-in nodes. The VAE decoding process reuses the native decoder, with an additional "alpha" branch attached to its feature map. The extension introduces only two functional nodes—for LoRA loading and RGBA decoding—along with an optional "Element Prompts" node. By connecting this to an upstream "Generate Text" node capable of processing images (requiring a text encoder that supports image input), users can generate a layer plan and extract a set of RGBA layers in a single queue execution. Each layer undergoes a full sampling pass; foreground layers retain authentic semi-transparency, while the background layer is rendered as a fully opaque, complete image."""
-version = "0.5.0"
+version = "0.5.1"
 license = {file = "LICENSE"} 
 
 [project.urls]
