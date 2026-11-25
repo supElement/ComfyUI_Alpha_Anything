@@ -134,6 +134,8 @@ _ELEMENT_TEMPLATE = (
 
 _ELEMENTS_SECTION = re.compile(r"<ELEMENTS>(.*?)(?:</ELEMENTS>|<BACKGROUND>|$)", re.DOTALL | re.IGNORECASE)
 _BACKGROUND_SECTION = re.compile(r"<BACKGROUND>(.*?)(?:</BACKGROUND>|<ELEMENTS>|$)", re.DOTALL | re.IGNORECASE)
+# Only the leading [E1] tag of a line; the same bracket text inside a description stays.
+_ELEMENT_TAG = re.compile(r"^\[E\d+\]\s*")
 
 
 def _split_vlm_plan(text: str) -> tuple[str, str]:
@@ -166,18 +168,18 @@ class AlphaAnythingElementPrompts(io.ComfyNode):
 
     @classmethod
     def execute(cls, vlm, use_vlm, elements, template, background) -> io.NodeOutput:
-        if use_vlm and vlm:
+        from_vlm = bool(use_vlm and vlm)
+        if from_vlm:
             elements, background = _split_vlm_plan(vlm)
+        lines = [_ELEMENT_TAG.sub("", line.strip()).strip() for line in elements.splitlines()]
+        lines = [line for line in lines if line]
+        background = background.strip()
         prompts = []
         with_alpha = []
-        background = background.strip()
         if background:
             prompts.append(background)
             with_alpha.append(False)
-        for line in elements.splitlines():
-            element = line.strip()
-            if not element:
-                continue
+        for element in lines:
             if "{element}" in template:
                 prompts.append(template.replace("{element}", element))
             else:
@@ -185,7 +187,9 @@ class AlphaAnythingElementPrompts(io.ComfyNode):
             with_alpha.append(True)
         if not prompts:
             raise ValueError("AlphaAnything received neither elements nor a background instruction.")
-        return io.NodeOutput(prompts, with_alpha)
+        # Frontend writes these back into the widgets; blank lines there are skipped when parsing.
+        ui = {"elements": ["\n\n".join(lines)], "background": [background]} if from_vlm else None
+        return io.NodeOutput(prompts, with_alpha, ui=ui)
 
 
 class AlphaAnythingVaeDecode(io.ComfyNode):

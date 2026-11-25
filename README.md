@@ -104,6 +104,8 @@ git clone https://github.com/supElement/ComfyUI_Alpha_Anything.git
 - `AlphaAnything LoRA Loader` 接在模型加载节点与 KSampler 之间，文本编码不需要经过它。
 - `AlphaAnything Element Prompts` 的 `prompts` 接原生 CLIP 编码节点；list 由 ComfyUI 原生逐项展开，每个元素跑一次完整采样。
 - `vlm` 接 VLM 输出，`use_vlm` 打开时按 `<ELEMENTS>` / `<BACKGROUND>` 自动拆分；关闭时只用 `elements` / `background` 手填内容，端口连接保留。
+- VLM 模式下每次执行完，拆分结果会自动回填到 `elements` / `background` 输入框，方便查看和再编辑（为了使编辑生效需要关闭 use_vlm 开关）；本次排队仍用回填前的内容，缓存重跑也会回填。
+- `template` 输入框固定 5 行高；元素行会套进模板（含 `{element}` 则替换，否则追加在后面），背景层指令原样使用、不套模板。
 - `AlphaAnything VAE Decode (RGBA)` 替换普通的 VAE Decode；`alpha` 端口接 LoRA Loader 的 `alpha` 输出。
 - `with_alpha` 是逐层标记：Element Prompts 的 `with_alpha` 输出与 `prompts` 等长（背景层为关），接到解码节点后，背景层自动跳过 alpha 分支、输出不透明整图；两个端口要走同一条链路，保证逐层对齐。
 - 不接这个端口时，解码节点对所有层都计算 alpha。
