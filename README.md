@@ -7,7 +7,7 @@
 
 # ComfyUI_Alpha_Anything
 
-AlphaAnything 的原生 ComfyUI 实现：不依赖 diffusers，LoRA 走 ComfyUI 原生加载器，模型加载、文本编码、采样和 VAE 编码全部使用自带节点；VAE 解码复用原生 decoder，只在其特征上挂一条 alpha 分支。扩展只新增两个运行节点（LoRA 加载、RGBA 解码）和一个可选的 Element Prompts 提示词节点。上游接能读图的 Generate Text（需支持图像输入的文本编码器）输出图层计划，即可在一次排队中逐层提取出一组 RGBA 图层：每层一次完整采样，前景层带真实半透明，背景层为不透明整图。
+AlphaAnything 的原生 ComfyUI 实现：不依赖 diffusers，LoRA 走 ComfyUI 原生加载器，模型加载、文本编码、采样和 VAE 编码全部使用自带节点；VAE 解码复用原生 decoder，只在其特征上挂一条 alpha 分支。扩展只新增两个运行节点（LoRA 加载、RGBA 解码）和一个可选的 Element Prompts 提示词节点。上游接 vlm 节点输出图层计划，即可在一次排队中逐层提取出一组 RGBA 图层：每层一次完整采样，前景层带真实半透明，背景层为不透明整图。
 
 </div>
 
