@@ -72,19 +72,17 @@ git clone https://github.com/supElement/ComfyUI_Alpha_Anything.git
 
 > 需要较新的 ComfyUI（使用 V3 节点 API 与 `io.Custom` 端口）。
 
-## 模型目录
+### 模型目录
 
 适配器统一放在：
 
-```text
-ComfyUI/models/alphaanything/
-├── flux2_klein_base_9b_t2rgba/
-│   ├── adapter_config.json
-│   ├── pytorch_lora_weights.safetensors
-│   └── alpha_decoder.safetensors
-└── qwen_image_2512_t2rgba/
-    ├── ...
-```
+> ComfyUI/models/alphaanything/
+>   flux2_klein_base_9b_t2rgba/
+>     adapter_config.json
+>     pytorch_lora_weights.safetensors
+>     alpha_decoder.safetensors
+>   qwen_image_2512_t2rgba/
+>     ...
 
 - 目录不存在会自动创建。
 - 三个文件缺任意一个，首次执行该适配器时会自动下载；下载先走 `huggingface.co`，失败再走 `hf-mirror.com`。
@@ -100,13 +98,15 @@ ComfyUI/models/alphaanything/
 | 节点 | 作用 | 输入 | 输出 |
 |---|---|---|---|
 | **AlphaAnything LoRA Loader** | 加载官方 LoRA 与 alpha 分支权重，挂到 MODEL 上 | `adapter`、`strength`、`model` | `model`、`alpha` |
-| **AlphaAnything Element Prompts** | 把 VLM 的图层计划（或手填清单）套进模板，生成 prompt 列表 | `vlm`、`use_vlm`、`elements`、`template`、`background` | `prompts`（list） |
-| **AlphaAnything VAE Decode (RGBA)** | 用原生 VAE 解码，同时输出 alpha 并合成 RGBA | `samples`、`vae`、`alpha` | `IMAGE`（4 通道） |
+| **AlphaAnything Element Prompts** | 把 VLM 的图层计划（或手填清单）套进模板，生成 prompt 列表 | `vlm`、`use_vlm`、`elements`、`template`、`background` | `prompts`（list）、`with_alpha`（list） |
+| **AlphaAnything VAE Decode (RGBA)** | 用原生 VAE 解码，同时输出 alpha 并合成 RGBA | `samples`、`vae`、`alpha`、`with_alpha` | `IMAGE`（4 通道） |
 
 - `AlphaAnything LoRA Loader` 接在模型加载节点与 KSampler 之间，文本编码不需要经过它。
 - `AlphaAnything Element Prompts` 的 `prompts` 接原生 CLIP 编码节点；list 由 ComfyUI 原生逐项展开，每个元素跑一次完整采样。
 - `vlm` 接 VLM 输出，`use_vlm` 打开时按 `<ELEMENTS>` / `<BACKGROUND>` 自动拆分；关闭时只用 `elements` / `background` 手填内容，端口连接保留。
 - `AlphaAnything VAE Decode (RGBA)` 替换普通的 VAE Decode；`alpha` 端口接 LoRA Loader 的 `alpha` 输出。
+- `with_alpha` 是逐层标记：Element Prompts 的 `with_alpha` 输出与 `prompts` 等长（背景层为关），接到解码节点后，背景层自动跳过 alpha 分支、输出不透明整图；两个端口要走同一条链路，保证逐层对齐。
+- 不接这个端口时，解码节点对所有层都计算 alpha。
 
 ---
 
@@ -175,6 +175,7 @@ README / CLI 示例常用更短的「描述 + `isolated on a transparent backgro
 
 
 - 背景层指令填到 `AlphaAnything Element Prompts` 的 `background`（原样使用、排在首位），`elements` 只放前景元素。
+- 背景层的 `with_alpha` 由 Element Prompts 自动置为关，把该输出接到解码节点即可，无需拆分支；背景层仍按独立采样跑，不会出现偶发镂空。
 - 位置词按**源图**中的位置描述（on the left / the smaller line 等）。
 - 一次提取一个目标；要分层就多次运行。
 - 不限于半透明元素，海报里的不透明物体、文字、装饰图形同样可以提取。

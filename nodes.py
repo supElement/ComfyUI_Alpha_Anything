@@ -158,7 +158,10 @@ class AlphaAnythingElementPrompts(io.ComfyNode):
                 io.String.Input("template", multiline=True, default=_ELEMENT_TEMPLATE, tooltip="Use {element} as the placeholder; without it the element text is appended."),
                 io.String.Input("background", multiline=True, default="", tooltip="Full background-layer instruction, used verbatim and placed first. Leave empty to skip."),
             ],
-            outputs=[io.String.Output(display_name="prompts", is_output_list=True)],
+            outputs=[
+                io.String.Output(display_name="prompts", is_output_list=True),
+                io.Boolean.Output(display_name="with_alpha", is_output_list=True),
+            ],
         )
 
     @classmethod
@@ -166,9 +169,11 @@ class AlphaAnythingElementPrompts(io.ComfyNode):
         if use_vlm and vlm:
             elements, background = _split_vlm_plan(vlm)
         prompts = []
+        with_alpha = []
         background = background.strip()
         if background:
             prompts.append(background)
+            with_alpha.append(False)
         for line in elements.splitlines():
             element = line.strip()
             if not element:
@@ -177,9 +182,10 @@ class AlphaAnythingElementPrompts(io.ComfyNode):
                 prompts.append(template.replace("{element}", element))
             else:
                 prompts.append(f"{template.strip()} {element}".strip())
+            with_alpha.append(True)
         if not prompts:
             raise ValueError("AlphaAnything received neither elements nor a background instruction.")
-        return io.NodeOutput(prompts)
+        return io.NodeOutput(prompts, with_alpha)
 
 
 class AlphaAnythingVaeDecode(io.ComfyNode):
@@ -193,13 +199,14 @@ class AlphaAnythingVaeDecode(io.ComfyNode):
                 io.Latent.Input("samples"),
                 io.Vae.Input("vae"),
                 AlphaAnythingAdapter.Input("alpha"),
+                io.Boolean.Input("with_alpha", optional=True, force_input=True, tooltip="Connect Element Prompts' with_alpha output so background layers skip the alpha branch; unconnected layers always decode alpha."),
             ],
             outputs=[io.Image.Output()],
         )
 
     @classmethod
-    def execute(cls, vae, samples, alpha) -> io.NodeOutput:
-        return io.NodeOutput(decode_rgba(vae, samples["samples"], alpha))
+    def execute(cls, vae, samples, alpha, with_alpha=None) -> io.NodeOutput:
+        return io.NodeOutput(decode_rgba(vae, samples["samples"], alpha, with_alpha=with_alpha is not False))
 
 
 class AlphaAnythingExtension(ComfyExtension):

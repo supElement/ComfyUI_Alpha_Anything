@@ -302,10 +302,17 @@ def _decoder_layout(decoder: nn.Module):
     raise TypeError("AlphaAnything needs a FLUX.2 2D VAE or a Qwen-Image (Wan 2.1) VAE.")
 
 
-def decode_rgba(vae, samples: torch.Tensor, adapter: dict) -> torch.Tensor:
+def decode_rgba(vae, samples: torch.Tensor, adapter: dict, *, with_alpha: bool = True) -> torch.Tensor:
     """Decode latents with the native VAE decoder while the alpha branch reads its features."""
     if samples.ndim == 5 and samples.shape[2] != 1:
         raise RuntimeError("AlphaAnything decodes single images only.")
+
+    if not with_alpha:
+        pixels = vae.decode(samples)
+        if pixels.ndim == 5:
+            pixels = pixels[:, 0]
+        opaque = torch.ones((*pixels.shape[:3], 1), dtype=pixels.dtype, device=pixels.device)
+        return torch.cat((pixels, opaque), dim=-1)
 
     conv_in, mid_layers, stages, two_dimensional = _decoder_layout(vae.first_stage_model.decoder)
     topology = AlphaTopology(
