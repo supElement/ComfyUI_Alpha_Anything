@@ -7,7 +7,7 @@
 
 # ComfyUI_Alpha_Anything
 
-Native ComfyUI implementation of AlphaAnything: does not rely on diffusers, LoRA loads via ComfyUI's native loader, all model loading, text encoding, sampling, and VAE encoding use built-in nodes; VAE decoding reuses the native decoder, with only an alpha branch attached to its features. The extension only adds two runtime nodes (LoRA loading, RGBA decoding) and an optional Element Prompts prompt node. Connect upstream to a Generate Text (needs a text encoder that supports image input) output layer plan that can read images, and you can extract a set of RGBA layers layer by layer in one queue: each layer gets a full sampling, the foreground layer has true transparency, and the background layer is an opaque full image.
+Native ComfyUI implementation of AlphaAnything: does not rely on diffusers, LoRA loads via ComfyUI's native loader, all model loading, text encoding, sampling, and VAE encoding use built-in nodes; VAE decoding reuses the native decoder, with only an alpha branch attached to its features. The extension adds only two runtime nodes (LoRA loading, RGBA decoding) and an optional Element Prompts prompt node. Connect upstream to a vlm node outputting layer plan, and you can extract a set of RGBA layers layer by layer in one queue: each layer gets a full sampling, the foreground layer has true transparency, and the background layer is an opaque full image.
 
 </div>
 
@@ -17,32 +17,32 @@ Native ComfyUI implementation of AlphaAnything: does not rely on diffusers, LoRA
 
 ---
 
-## What Problem It Solves
+## What problem does it solve
 
 AlphaAnything trained two things on RGB diffusion models (FLUX.2 Klein / Qwen-Image): transformer LoRA, and an alpha decoding branch.
 
 - RGB generation proceeds normally, alpha **does not enter latent**.
-- During decoding, the alpha branch bypasses the intermediate features of the RGB VAE decoder (conv_in / mid / up stages), predicts alpha, and then maps it to 0–1.
+- During decoding, the alpha branch reads intermediate features (conv_in / mid / various up stages) from the RGB VAE decoder, predicts alpha, and then maps it to 0–1.
 
-This extension hands over all the parts that ComfyUI already has to native nodes, only adding LoRA loading and VAE decoding, and adds an auxiliary node AlphaAnything Element Prompts. Through the auxiliary node, you can generate multiple layers with one click, and the layer accuracy depends on the VLM model's capability (of course, you can also input manually).
+This extension hands over all the parts already present in ComfyUI to native nodes, only adding LoRA loading and VAE decoding, and adds an auxiliary node AlphaAnything Element Prompts. Through the auxiliary node, you can generate multiple layers with one click, the accuracy of layering depends on the vlm model's capability (of course, you can also input manually).
 
-- **LoRA Loading**: Takes official LoRA weights, converts them according to the alpha/rank configured in the adapter, and loads them into MODEL, passing down the alpha branch weights along with the adapter.
-- **Decoding**: Hooks into the decoder features during the native `vae.decode` execution process to drive the alpha branch, outputting 4-channel RGBA.
+- **LoRA Loading**: Loads official LoRA weights according to the alpha/rank configured in the adapter into MODEL, and passes down the alpha branch weights along with the adapter.
+- **Decoding**: Hooks into the decoder features during native `vae.decode` execution to drive the alpha branch, outputting 4-channel RGBA.
 
 ---
 
-## Supported Models and Adapters
+## Supported models and adapters
 
 | Base Model | Task | Adapter Directory | Required VAE |
 |---|---|---|---|
-| FLUX.2 Klein Base 9B | Text-to-RGBA | `flux2_klein_base_9b_t2rgba` | FLUX.2 VAE（128 channel latent，2D decoder） |
+| FLUX.2 Klein Base 9B | Text-to-RGBA | `flux2_klein_base_9b_t2rgba` | FLUX.2 VAE (128 channel latent, 2D decoder) |
 | FLUX.2 Klein Base 9B | Image-to-RGBA | `flux2_klein_base_9b_i2rgba` | Same as above |
-| Qwen-Image-2512 | Text-to-RGBA | `qwen_image_2512_t2rgba` | Qwen-Image VAE（Wan 2.1，16 channel） |
+| Qwen-Image-2512 | Text-to-RGBA | `qwen_image_2512_t2rgba` | Qwen-Image VAE (Wan 2.1, 16 channels) |
 | Qwen-Image-Edit-2511 | Image-to-RGBA | `qwen_image_edit_2511_i2rgba` | Same as above |
 
 > Adapters are released by [WLuLi/AlphaAnything](https://huggingface.co/WLuLi/AlphaAnything), each about 400–470MB.
 >
-> The two FLUX.2 adapters were trained on Klein Base and can also be used directly for 4-step distillation version `FLUX.2-klein-9B`（most cases, the official instructions are usable）.
+> The two FLUX.2 adapters were trained on Klein Base and can also be used directly for 4-step distilled versions `FLUX.2-klein-9B` (most cases work as per official instructions).
 
 ---
 
@@ -84,16 +84,18 @@ Nodes are located in `alphaanything` category, search `AlphaAnything` to find th
 
 | Node | Function | Input | Output |
 |---|---|---|---|
-| **AlphaAnything LoRA Loader** | Loads official LoRA and alpha branch weights, attaching them to MODEL | `adapter`、`strength`、`model` | `model`、`alpha` |
-| **AlphaAnything Element Prompts** | Takes the layer plan from the VLM（or manually entered list）and fits it into a template to generate a prompt list | `vlm`、`use_vlm`、`elements`、`template`、`background` | `prompts`（list）、`with_alpha`（list） |
-| **AlphaAnything VAE Decode (RGBA)** | Uses native VAE decoding while outputting alpha and synthesizing RGBA | `samples`、`vae`、`alpha`、`with_alpha` | `IMAGE`（4 channels） |
+| **AlphaAnything LoRA Loader** | Loads official LoRA and alpha branch weights, attaches to MODEL | `adapter`、`strength`、`model` | `model`、`alpha` |
+| **AlphaAnything Element Prompts** | Puts the VLM's layer plan (or manually entered list) into a template, generates a prompt list | `vlm`、`use_vlm`、`elements`、`template`、`background` | `prompts` (list)、`with_alpha` (list) |
+| **AlphaAnything VAE Decode (RGBA)** | Uses native VAE decoding, outputs alpha and synthesizes RGBA | `samples`、`vae`、`alpha`、`with_alpha` | `IMAGE` (4 channels) |
 
 - `AlphaAnything LoRA Loader` connects between the model loading node and KSampler.
 - `AlphaAnything Element Prompts` node connects to VLM output, `use_vlm` turns on to automatically split `<ELEMENTS>` / `<BACKGROUND>`; when off, use `elements` / `background` to manually enter content, keeping port connections.
 - In VLM mode, after each execution, the split results are automatically refilled to `elements` / `background` input boxes for easy viewing and editing (to make edits take effect, you need to turn off the use_vlm switch); the content used in this queue still uses the refilled content, and cache reruns will also refill.
-- `template` element rows fit into the template（if `{element}` is present, they replace it; otherwise, they append to the end），the background layer command is used as is, without fitting the template.
+- `template` element rows will be fitted into a template (replacing if `{element}` is present, otherwise appended at the end), the background layer command is used as is, without fitting the template.
 - `AlphaAnything VAE Decode (RGBA)` replaces the normal VAE Decode; `alpha` port connects to LoRA Loader's `alpha` output.
-- `with_alpha` is layer tagging: Element Prompts' `with_alpha` output matches `prompts` in length（background layer off），when connected to the decoding node, the background layer automatically skips the alpha branch and outputs an opaque full image; the two ports must be on the same chain to ensure layer alignment. If this port is not connected, the decoding node calculates alpha for all layers.
+- `with_alpha` is layer tagging: Element Prompts' `with_alpha` output matches `prompts` in length (background layer off), connected to the decoding node, the background layer automatically skips the alpha branch, outputting an opaque full image; the two ports must be on the same chain to ensure layer alignment. If this port is not connected, the decoding node calculates alpha for all layers.
+
+---
 ## Usage
 
 ### Text-to-RGBA
@@ -116,7 +118,7 @@ There is no mandatory template from the official side. Three types of writing ex
 
 ### Text-to-RGBA
 
-The generation examples on the official website primarily focus on **detailed descriptions**: main structure, material, transparency representation (glass, fabric, feathers, paper art), light and shadows. It does not necessarily add a fixed set phrase. For example (Qwen-Image):
+The generation examples on the official website primarily focus on **detailed descriptions**: main structure, material, transparency representation (glass, fabric, feathers, paper art), light and shadows. Fixed phrases are not added. For example (Qwen-Image):
 
 > A glasswing butterfly opens its nearly transparent wings, edged in chestnut and narrow cream bands. Fine dark veins cross the clear membranes, while a slim opaque body, curled legs, and delicate antennae remain sharply defined. Natural-history macro photography with faint blue reflections on the wings.
 
@@ -126,7 +128,7 @@ README / CLI examples often use a shorter "description + `isolated on a transpar
 
 
 - Describe one subject at a time (the output will only have one layer of alpha, multiple targets will be merged into the same layer).
-- For translucent materials, it is more effective to describe them clearly in the prompt (`translucent`, `clear glass`, `fine mesh`) than to abstractly emphasize "transparency".
+- For translucent materials, it's more effective to describe them clearly in the prompt (`translucent`, `clear glass`, `fine mesh`) than to abstractly emphasize "transparency".
 - Put unwanted backgrounds, trash in negative prompts.
 
 ### Image-to-RGBA
@@ -139,7 +141,7 @@ Layered disassembly examples use free instructions, clearly specifying what to t
 
 > Extract only the tall clear stemmed cocktail glass on the right, including its complete rounded bowl, thin rim, coral-red drink, ice, orange garnish inside the bowl, slender stem and oval glass foot. Preserve true natural partial transparency through the empty upper glass, glass walls, clear stem and base, with the original reflections and refraction. Everything outside the requested element must be transparent. Do not recenter, resize, crop, restyle or add objects.
 
-Giving a detailed generative description is also feasible (the layer writing in the official combined examples, used for image-to-RGBA extraction test, is consistent with official results):
+Giving detailed generative descriptions is also feasible (the layer writing in the official combined examples, used for image-to-RGBA extraction test, is consistent with official results):
 
 > A broad luxurious champagne silk fabric drape lying almost horizontally on an unseen tabletop, with one softly raised folded crest at the right and several smooth gently curved folds trailing toward the left. Heavy fluid satin with muted honey-gold highlights, deep subtle champagne shadows, exceptionally fine woven texture and realistic weighted cloth. A single complete restrained connected fabric shape, low and wide. The entire complete subject is inside generous empty margins, isolated on a genuinely transparent background. Authentic fine material detail, restrained natural colors, soft directional illumination from upper left.
 
@@ -148,7 +150,7 @@ When layering, don't miss the background layer: the background layer is not "the
 > Extract the complete photographic BACKGROUND, keeping the original dark studio wall, the gray stone countertop and the plants behind the glass. Remove only the cocktail glass and drink, both mint leaves, chrome shaker, all words and icons. Reconstruct the wall, foliage and counter only where those foreground elements were removed. Return the entire original rectangular background fully opaque, preserving the original lighting, blur and framing.
 
 
-- Fill the background layer instruction in `AlphaAnything Element Prompts`'s `background` (original usage, placed first), `elements` only put foreground elements.
+- Fill the background layer instruction in `AlphaAnything Element Prompts` with `background` (original usage, placed first), `elements` only put foreground elements.
 - The `with_alpha` for the background layer is automatically set to off by Element Prompts. Connect this output to the decoding node, no need to split branches; the background layer still runs according to independent sampling, will not appear occasional hollowing.
 ## Parameter Description
 
