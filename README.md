@@ -11,9 +11,9 @@ AlphaAnything 的原生 ComfyUI 实现：不依赖 diffusers，LoRA 走 ComfyUI 
 
 </div>
 
-<img width="2264" height="793" alt="image" src="https://github.com/user-attachments/assets/b64f8205-6ba5-4b9a-95d9-f6104f8bdae1" />
+<img width="2240" height="766" alt="image" src="https://github.com/user-attachments/assets/b36ecda2-8058-4e95-b01c-ad707f425161" />
 
-<img width="2271" height="1158" alt="屏幕截图 2026-11-24 154434" src="https://github.com/user-attachments/assets/794d3af2-c5e7-4473-9eeb-1d3df3039074" />
+<img width="2241" height="1135" alt="image" src="https://github.com/user-attachments/assets/95d2be5a-cac6-4c10-90db-a8138d93a7d3" />
 
 ---
 
@@ -23,18 +23,11 @@ AlphaAnything 在 RGB 扩散模型（FLUX.2 Klein / Qwen-Image）上训练了两
 
 - RGB 照常生成，alpha **不进入 latent**。
 - 解码时，alpha 分支旁路读取 RGB VAE decoder 的中间特征（conv_in / mid / 各级 up stage），预测 alpha，再映射到 0–1。
-- 因此官方实现必须改动 diffusers 的解码流程，无法直接套用原生 ComfyUI 工作流。
 
-本扩展把 ComfyUI 已经具备的部分全部交还原生节点，只补两件事：
+本扩展把 ComfyUI 已经具备的部分全部交还原生节点，只补 lora 加载和 vae 解码，另外增加了辅助节点 AlphaAnything Element Prompts，通过辅助节点可一键生成多个分层，分层准确度取决于 vlm 模型能力（当然，你也可以手动输入）。
 
 - **LoRA 加载**：把官方 LoRA 权重按 adapter 配置的 alpha/rank 换算后打进 MODEL，并把 alpha 分支权重随适配器往下传。
 - **解码**：在原生 `vae.decode` 执行过程中 hook decoder 特征驱动 alpha 分支，输出 4 通道 RGBA。
-
-✨ **RGB 逐像素一致**：RGB 通道与直接调用原生 `vae.decode` 结果完全相同（差值为 0），alpha 由旁路分支生成。
-
-✨ **强度自动换算**：`strength = 1.0` 就是官方强度；adapter 配置里的 `alpha / rank` 会自动乘进去。
-
-✨ **适配器自动下载**：只读 `ComfyUI/models/alphaanything/`，目录不存在自动创建；缺权重文件时首次执行自动下载，Hugging Face 官方源优先，失败再走 hf-mirror 镜像。
 
 ---
 
@@ -50,8 +43,6 @@ AlphaAnything 在 RGB 扩散模型（FLUX.2 Klein / Qwen-Image）上训练了两
 > 适配器由 [WLuLi/AlphaAnything](https://huggingface.co/WLuLi/AlphaAnything) 发布，每个约 400–470MB。
 >
 > 两个 FLUX.2 适配器训练于 Klein Base，也可直接用于 4-step 蒸馏版 `FLUX.2-klein-9B`（官方说明多数情况可用）。
->
-> 只支持上述两类 VAE 解码器；Qwen-Image 2.1 的 64 通道 VAE、Wan 2.2 等其他解码器会直接报错。
 
 ---
 
@@ -68,26 +59,22 @@ cd ./ComfyUI/custom_nodes
 git clone https://github.com/supElement/ComfyUI_Alpha_Anything.git
 ```
 
-重启 ComfyUI。无额外依赖：下载使用 Python 标准库，LoRA 加载走 ComfyUI 原生 LoRA 加载器。
-
-> 需要较新的 ComfyUI（使用 V3 节点 API 与 `io.Custom` 端口）。
-
 ### 模型目录
 
 适配器统一放在：
 
-> ComfyUI/models/alphaanything/
->   flux2_klein_base_9b_t2rgba/
->     adapter_config.json
->     pytorch_lora_weights.safetensors
->     alpha_decoder.safetensors
->   qwen_image_2512_t2rgba/
->     ...
+```text
+ ComfyUI/models/alphaanything/
+   flux2_klein_base_9b_t2rgba/
+     adapter_config.json
+     pytorch_lora_weights.safetensors
+     alpha_decoder.safetensors
+   qwen_image_2512_t2rgba/
+     ...
+```
 
-- 目录不存在会自动创建。
-- 三个文件缺任意一个，首次执行该适配器时会自动下载；下载先走 `huggingface.co`，失败再走 `hf-mirror.com`。
+- 目录不存在会自动创建。首次执行适配器时会自动下载；下载先走 `huggingface.co`，失败再走 `hf-mirror.com`。
 - 也可以手动从 [Hugging Face](https://huggingface.co/WLuLi/AlphaAnything/tree/main) 下载对应子目录，按上面的结构放好即可。
-- 适配器下拉框默认列出官方 4 个；本地自建的适配器目录只要包含 `adapter_config.json` 也会出现在列表里。
 
 ---
 
@@ -101,14 +88,12 @@ git clone https://github.com/supElement/ComfyUI_Alpha_Anything.git
 | **AlphaAnything Element Prompts** | 把 VLM 的图层计划（或手填清单）套进模板，生成 prompt 列表 | `vlm`、`use_vlm`、`elements`、`template`、`background` | `prompts`（list）、`with_alpha`（list） |
 | **AlphaAnything VAE Decode (RGBA)** | 用原生 VAE 解码，同时输出 alpha 并合成 RGBA | `samples`、`vae`、`alpha`、`with_alpha` | `IMAGE`（4 通道） |
 
-- `AlphaAnything LoRA Loader` 接在模型加载节点与 KSampler 之间，文本编码不需要经过它。
-- `AlphaAnything Element Prompts` 的 `prompts` 接原生 CLIP 编码节点；list 由 ComfyUI 原生逐项展开，每个元素跑一次完整采样。
-- `vlm` 接 VLM 输出，`use_vlm` 打开时按 `<ELEMENTS>` / `<BACKGROUND>` 自动拆分；关闭时只用 `elements` / `background` 手填内容，端口连接保留。
+- `AlphaAnything LoRA Loader` 接在模型加载节点与 KSampler 之间。
+- `AlphaAnything Element Prompts` 节点接 VLM 输出，`use_vlm` 打开时按 `<ELEMENTS>` / `<BACKGROUND>` 自动拆分；关闭时只用 `elements` / `background` 手填内容，端口连接保留。
 - VLM 模式下每次执行完，拆分结果会自动回填到 `elements` / `background` 输入框，方便查看和再编辑（为了使编辑生效需要关闭 use_vlm 开关）；本次排队仍用回填前的内容，缓存重跑也会回填。
-- `template` 输入框固定 5 行高；元素行会套进模板（含 `{element}` 则替换，否则追加在后面），背景层指令原样使用、不套模板。
+- `template` 元素行会套进模板（含 `{element}` 则替换，否则追加在后面），背景层指令原样使用、不套模板。
 - `AlphaAnything VAE Decode (RGBA)` 替换普通的 VAE Decode；`alpha` 端口接 LoRA Loader 的 `alpha` 输出。
-- `with_alpha` 是逐层标记：Element Prompts 的 `with_alpha` 输出与 `prompts` 等长（背景层为关），接到解码节点后，背景层自动跳过 alpha 分支、输出不透明整图；两个端口要走同一条链路，保证逐层对齐。
-- 不接这个端口时，解码节点对所有层都计算 alpha。
+- `with_alpha` 是逐层标记：Element Prompts 的 `with_alpha` 输出与 `prompts` 等长（背景层为关），接到解码节点后，背景层自动跳过 alpha 分支、输出不透明整图；两个端口要走同一条链路，保证逐层对齐。不接这个端口时，解码节点对所有层都计算 alpha。
 
 ---
 
@@ -116,25 +101,15 @@ git clone https://github.com/supElement/ComfyUI_Alpha_Anything.git
 
 ### 文生 RGBA
 
-1. 按模型原生工作流加载组件：
-   - FLUX.2：`UNETLoader`（Load Diffusion Model）选 FLUX.2 Klein base，`CLIPLoader`（Load CLIP）类型选 `flux2`，`VAELoader`（Load VAE）选 FLUX.2 VAE。
-   - Qwen-Image：`UNETLoader`（Load Diffusion Model）选 Qwen-Image-2512，`CLIPLoader`（Load CLIP）类型选 `qwen_image`，`VAELoader`（Load VAE）选 Qwen-Image（Wan 2.1）VAE。
-2. 空 latent：FLUX.2 用 `Empty Flux 2 Latent`（1024×1024）；Qwen 用 16 通道的 `EmptySD3LatentImage`。
-3. 文本编码用原生 CLIP 节点；负向提示词留空或一个空格即可。
-4. 接入 `AlphaAnything LoRA Loader`，`adapter` 选 **t2rgba**，`strength` 保持 1.0。
-5. 采样参数按官方参考设置：Klein base 50 步 / CFG 4.0；4-step 蒸馏版 4 步 / CFG 1.0；Qwen-Image 50 步 / CFG 4.0。
-6. 采样后接 `AlphaAnything VAE Decode (RGBA)`，再保存（`SaveImage` 可直接存 RGBA PNG）。
+- 按模型原生工作流加载组件：接入 `AlphaAnything LoRA Loader`，`adapter` 选 **t2rgba**。
+- 采样参数按官方参考设置：Klein base 50 步 / CFG 4.0；4-step 蒸馏版 4 步 / CFG 1.0；Qwen-Image 50 步 / CFG 4.0。
+- 采样后接 `AlphaAnything VAE Decode (RGBA)`。
 
 ### 图生 RGBA
 
 在对应模型的原生编辑工作流基础上接入本扩展：
 
-- **FLUX.2**：`LoadImage` → `VAEEncode`（FLUX.2 VAE）→ `Set Reference Latent` 挂到 conditioning；采样空 latent 的宽高与源图一致。
-- **Qwen-Image-Edit**：`Text Encode Qwen Image Edit`（`image` 接源图，`vae` 接 Qwen VAE，`prompt` 写提取指令或详细描述，见「提示词」）→ 直接出 conditioning；采样空 latent 宽高与源图一致。
-- `AlphaAnything LoRA Loader` 换成 **i2rgba** 适配器，强度仍保持 1.0。
-- 采样参数同上；输出仍走 `AlphaAnything VAE Decode (RGBA)`。
-
-> 官方脚本会把源图等比缩放到接近 1024² 再送入模型。在 ComfyUI 里请自行把源图缩放到约 1MP、并让采样 latent 宽高与参考图一致。
+- `AlphaAnything LoRA Loader` 换成 **i2rgba** 适配器。 输出仍走 `AlphaAnything VAE Decode (RGBA)`。
 
 ---
 
@@ -178,11 +153,6 @@ README / CLI 示例常用更短的「描述 + `isolated on a transparent backgro
 
 - 背景层指令填到 `AlphaAnything Element Prompts` 的 `background`（原样使用、排在首位），`elements` 只放前景元素。
 - 背景层的 `with_alpha` 由 Element Prompts 自动置为关，把该输出接到解码节点即可，无需拆分支；背景层仍按独立采样跑，不会出现偶发镂空。
-- 位置词按**源图**中的位置描述（on the left / the smaller line 等）。
-- 一次提取一个目标；要分层就多次运行。
-- 不限于半透明元素，海报里的不透明物体、文字、装饰图形同样可以提取。
-- 本扩展不会替你加前缀，文本原样进编码器；想复现官方 CLI 的 `--description` 效果，自己带上那句 `Extract the object described by the text, ...` 即可。
-
 
 ---
 
@@ -192,19 +162,13 @@ README / CLI 示例常用更短的「描述 + `isolated on a transparent backgro
 |---|---|
 | `adapter` | 官方 4 个适配器 + 本地自定义目录（需含 `adapter_config.json`）。文生选 t2rgba，图生选 i2rgba。 |
 | `strength` | 默认 1.0 = 官方强度。内部按 `strength × alpha / rank` 加载 LoRA。 |
-| `samples` | 采样 latent，解码时只取 `samples["samples"]`。 |
-| `vae` | 必须与适配器家族匹配（FLUX.2 配 FLUX.2 VAE，Qwen 配 Qwen Wan 2.1 VAE）。 |
-
-> `strength` 只缩放 LoRA，不缩放 alpha 分支。两者是配套训练的，随意调低会让 RGB 偏离 alpha 分支的训练分布，建议保持 1.0。
 
 ---
 
 ## 已知限制
 
-1. **仅支持两类 VAE 解码器**：FLUX.2 的 2D Decoder 和 Qwen-Image（Wan 2.1）的 Decoder3d。其他结构（含 Qwen-Image 2.1 的 64 通道 VAE）会报错，不会静默降级。
-2. **只解单帧图像**：latent 时间维大于 1 会报错。
-3. **不支持 tiled decode**：命中 tiled 路径会报明确错误。显存不足请降低分辨率，不要开 tiled。
-4. **适配器与底模要配套**：FLUX.2 适配器只能用 FLUX.2 VAE，Qwen 适配器只能用 Qwen VAE；不匹配时解码会报 “does not match this VAE”。
+1. **仅支持两类 VAE 解码器**：FLUX.2 的 2D Decoder 和 Qwen-Image（Wan 2.1）的 Decoder3d。
+2. **不支持 tiled decode**：命中 tiled 路径会报明确错误。显存不足请降低分辨率，不要开 tiled。
 
 ---
 
